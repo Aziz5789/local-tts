@@ -73,5 +73,5 @@ class KokoroEngine:
             sample_rate=sample_rate,
         )
 
-    def warmup(self) -> None:
+    def warmup(self, voice: Voice | None = None) -> None:
         self.synthesize("Warmup.")
