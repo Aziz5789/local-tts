@@ -3,8 +3,9 @@ from pathlib import Path
 import soundfile as sf
 import typer
 
-from vox.engines.kokoro_mlx import KokoroEngine
+from vox.engines.registry import create_engine
 from vox.transcribe import WhisperTranscriber
+from vox.voices import load_voice
 
 app = typer.Typer()
 
@@ -22,6 +23,14 @@ transcribe_output_option = typer.Option(
     help="Path for the generated transcript file.",
 )
 
+engine_option = typer.Option(
+    "kokoro", "--engine", "-e", help="TTS engine to use: kokoro or qwen."
+)
+
+voice_option = typer.Option(
+    None, "--voice", "-v", help="Stored voice ID required by cloning engines."
+)
+
 
 @app.callback()
 def main() -> None:
@@ -29,17 +38,45 @@ def main() -> None:
 
 
 @app.command()
-def speak(text: str, output: Path = speak_output_option) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
+def speak(
+    text: str,
+    engine: str = engine_option,
+    voice_id: str | None = voice_option,
+    output: Path = speak_output_option,
+) -> None:
+    try:
+        tts_engine = create_engine(engine)
+    except ValueError as error:
+        raise typer.BadParameter(str(error), param_hint="--engine") from error
 
-    koko_engine = KokoroEngine()
+    if tts_engine.supports_cloning:
+        if voice_id is None:
+            raise typer.BadParameter(
+                f"--voice is required for engine '{engine}'.",
+                param_hint="--voice",
+            )
+        try:
+            selected_voice = load_voice(voice_id)
+        except (ValueError, FileNotFoundError) as error:
+            raise typer.BadParameter(
+                str(error),
+                param_hint="--voice",
+            ) from error
+    else:
+        if voice_id is not None:
+            raise typer.BadParameter(
+                f"Engine '{engine}' does not support stored voices.",
+                param_hint="--voice",
+            )
+        selected_voice = None
 
     try:
-        koko_engine.load()
-        result = koko_engine.synthesize(text=text)
+        tts_engine.load()
+        result = tts_engine.synthesize(text=text, voice=selected_voice)
     finally:
-        koko_engine.unload()
+        tts_engine.unload()
 
+    output.parent.mkdir(parents=True, exist_ok=True)
     sf.write(output, result.samples, samplerate=result.sample_rate)
     typer.echo(f"Audio file generated to path: {output}")
 
