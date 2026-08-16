@@ -1,11 +1,11 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import soundfile as sf
 import typer
 
-from vox.engines.registry import create_engine
-from vox.transcribe import WhisperTranscriber
-from vox.voices import load_voice
+from vox.audio import prepare_reference_audio
+from vox.voices import list_voices, load_voice, save_voice
 
 app = typer.Typer()
 
@@ -31,6 +31,9 @@ voice_option = typer.Option(
     None, "--voice", "-v", help="Stored voice ID required by cloning engines."
 )
 
+voices_app = typer.Typer(help="Manage stored voices.")
+app.add_typer(voices_app, name="voices")
+
 
 @app.callback()
 def main() -> None:
@@ -44,6 +47,9 @@ def speak(
     voice_id: str | None = voice_option,
     output: Path = speak_output_option,
 ) -> None:
+    # Import lazily so non-inference commands do not initialize MLX/Metal.
+    from vox.engines.registry import create_engine
+
     try:
         tts_engine = create_engine(engine)
     except ValueError as error:
@@ -86,6 +92,8 @@ def transcribe(
     audio: Path,
     output: Path | None = transcribe_output_option,
 ) -> None:
+    from vox.transcribe import WhisperTranscriber
+
     transcriber = WhisperTranscriber()
 
     try:
@@ -100,3 +108,47 @@ def transcribe(
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(text + "\n", encoding="utf-8")
         typer.echo(f"Transcript saved to {output}")
+
+
+@voices_app.command("list")
+def list_saved_voices() -> None:
+    voices_list = list_voices()
+
+    if not voices_list:
+        typer.echo("No saved voices.")
+    else:
+        for voice in voices_list:
+            typer.echo(f"{voice.voice_id} - {voice.display_name}")
+
+
+@voices_app.command("add")
+def add_voices(
+    audio: Path,
+    voice_id: str = typer.Option(..., "--id", "-i"),
+    transcript_file: Path = typer.Option(..., "--transcript-file", "-t"),
+) -> None:
+
+    if not transcript_file.is_file():
+        raise typer.BadParameter(
+            f"Transcript file is not a valid path: {transcript_file}"
+        )
+
+    transcript = transcript_file.read_text(encoding="utf-8")
+
+    clean_transcript = transcript.strip()
+
+    if not clean_transcript:
+        raise typer.BadParameter(f"Transcript file can't be empty: {transcript_file}")
+
+    with TemporaryDirectory(prefix="vox-voice-") as temporary_directory:
+        temporary_path = Path(temporary_directory)
+        prepared_audio_path = temporary_path / "reference.wav"
+        prepare_reference_audio(audio, prepared_audio_path)
+
+        voice = save_voice(
+            voice_id=voice_id,
+            reference_path=prepared_audio_path,
+            transcript=clean_transcript,
+        )
+
+    typer.echo(f"{voice.voice_id} - {voice.reference_path}")
