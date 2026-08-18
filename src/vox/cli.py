@@ -92,15 +92,10 @@ def transcribe(
     audio: Path,
     output: Path | None = transcribe_output_option,
 ) -> None:
-    from vox.transcribe import WhisperTranscriber
+    from vox.transcribe import transcribe_audio
 
-    transcriber = WhisperTranscriber()
-
-    try:
-        transcriber.load()
-        text = transcriber.transcribe(audio_path=audio)
-    finally:
-        transcriber.unload()
+    # TO-DO - implement the multiple language support
+    text = transcribe_audio(audio=audio)
 
     if output is None:
         typer.echo(text)
@@ -125,25 +120,34 @@ def list_saved_voices() -> None:
 def add_voices(
     audio: Path,
     voice_id: str = typer.Option(..., "--id", "-i"),
-    transcript_file: Path = typer.Option(..., "--transcript-file", "-t"),
+    transcript_file: Path | None = typer.Option(None, "--transcript-file", "-t"),
 ) -> None:
-
-    if not transcript_file.is_file():
-        raise typer.BadParameter(
-            f"Transcript file is not a valid path: {transcript_file}"
-        )
-
-    transcript = transcript_file.read_text(encoding="utf-8")
-
-    clean_transcript = transcript.strip()
-
-    if not clean_transcript:
-        raise typer.BadParameter(f"Transcript file can't be empty: {transcript_file}")
-
     with TemporaryDirectory(prefix="vox-voice-") as temporary_directory:
         temporary_path = Path(temporary_directory)
         prepared_audio_path = temporary_path / "reference.wav"
         prepare_reference_audio(audio, prepared_audio_path)
+
+        if transcript_file is not None:
+            if not transcript_file.is_file():
+                raise typer.BadParameter(
+                    f"Transcript file is not a valid path: {transcript_file}"
+                )
+            transcript = transcript_file.read_text(encoding="utf-8")
+
+        else:
+            from vox.transcribe import transcribe_audio
+
+            transcript = transcribe_audio(audio=prepared_audio_path)
+
+        clean_transcript = transcript.strip()
+
+        if not clean_transcript:
+            if transcript_file is None:
+                raise typer.BadParameter("Transcription generated no text.")
+            else:
+                raise typer.BadParameter(
+                    f"Transcript file can't be empty: {transcript_file}"
+                )
 
         voice = save_voice(
             voice_id=voice_id,
@@ -151,4 +155,14 @@ def add_voices(
             transcript=clean_transcript,
         )
 
-    typer.echo(f"{voice.voice_id} - {voice.reference_path}")
+    transcript_path = voice.reference_path.parent / "transcript.txt"
+
+    typer.echo(f"Voice saved: {voice.voice_id}")
+    typer.echo(f"Reference audio: {voice.reference_path}")
+    typer.echo(f"Transcript: {transcript_path}")
+
+    if transcript_file is None:
+        typer.echo(
+            "Review required: Make sure the generated transcript accurately "
+            "matches the reference audio before using this voice."
+        )

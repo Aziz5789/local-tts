@@ -38,3 +38,15 @@ class WhisperTranscriber:
         self._model = None
         gc.collect()
         mx.clear_cache()
+
+
+def transcribe_audio(audio: Path, language: str = "en") -> str:
+    transcriber = WhisperTranscriber()
+
+    try:
+        transcriber.load()
+        text = transcriber.transcribe(audio_path=audio, language=language)
+    finally:
+        transcriber.unload()
+
+    return text
