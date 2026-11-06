@@ -1,90 +1,148 @@
 # Vox
 
-Vox is a local, engine-agnostic text-to-speech CLI for Apple Silicon. It turns
-text into audio through a stable engine interface and keeps speech generation on
-the machine.
+Vox turns text into speech on your Mac, in a built-in voice or in a voice you clone
+from a short recording. It runs entirely on your machine: no account, no API key, no
+per-character fees, and your recordings never leave your computer.
 
-## Features
+You can use it two ways, and both share the same voice library:
 
-- Local speech generation with no API key or per-character fees.
-- A simple `vox speak` command.
-- WAV output to a default or user-selected path.
-- A swappable TTS engine interface.
-- Explicit model loading and unloading for limited unified memory.
-- MLX acceleration on Apple Silicon.
-
-Vox currently uses the 8-bit MLX port of Kokoro with the `af_heart` preset voice.
+- **The web app**: a local dashboard to type, listen, and manage voices.
+- **The `vox` command**: the same features from your terminal.
 
 ## Requirements
 
-- Apple Silicon Mac
-- Python 3.12
-- [`uv`](https://docs.astral.sh/uv/)
-- `ffmpeg`
-- `espeak-ng`
+- A Mac with Apple Silicon (M1 or newer)
+- macOS 15 or later
+- [Homebrew](https://brew.sh)
 
-Install the required system tools with Homebrew:
+Vox runs its models with Apple's MLX framework, so Intel Macs, Windows, and Linux
+are not supported.
+
+## Setup
+
+Install the tools Vox needs:
 
 ```bash
 brew install uv ffmpeg espeak-ng
 ```
 
-The macOS system Python is not used by this project. `uv` installs and manages the
-required Python version and isolated environment.
-
-## Installation
-
-Clone the repository, enter its directory, and synchronize the environment:
+Then, from the project folder, install Vox:
 
 ```bash
 uv sync
 ```
 
-Confirm that the CLI is available:
+Check that it works:
 
 ```bash
 uv run vox --help
 ```
 
-## Usage
+The speech models download automatically the first time you use them, so the first
+run takes longer and needs an internet connection. After that, everything works
+offline.
 
-Generate speech with the default output path, `outputs/vox.wav`:
+## Using the web app
 
-```bash
-uv run vox speak "Hello from Vox"
-```
-
-Choose a different output path with `--output` or `-o`:
+Start it with:
 
 ```bash
-uv run vox speak "Hello from the Vox command line" --output outputs/hello.wav
-uv run vox speak "Using the short option" -o outputs/short-example.wav
+uv run vox init
 ```
 
-View help for the `speak` command:
+Vox opens in your browser at `http://127.0.0.1:8000`. Press `Ctrl+C` in the terminal
+to stop it.
+
+- **Studio**: type some text, pick a voice from the menu, and press the arrow
+  (or `⌘ Enter`). Play the result or download it as a WAV file.
+- **Voices**: add a new voice, review its transcript, use it in Studio, or delete it.
+- **Help**: tips for writing text that sounds natural.
+
+Use `--port 8001` if port 8000 is busy, or `--no-open` to start it without opening
+the browser.
+
+### Cloning a voice
+
+1. Record about **15–25 seconds** of one person talking in a quiet room. Voice
+   Memos works well, and any audio or video format is fine.
+2. Go to **Voices → Add voice**, drop in the recording, and give it an ID like
+   `gavin`.
+3. Vox writes a draft transcript of the recording. **Listen to the clip and fix any
+   wrong words** before saving. The cloned voice is only as good as this transcript.
+4. Pick the voice in Studio and start typing.
+
+A cloned voice takes about 20 seconds per generation on an M1, mostly spent loading
+the model. The built-in voice takes a few seconds.
+
+## Using the command line
+
+Every command below runs from the project folder. Add `--help` to any of them to
+see all options.
+
+**Speak with the built-in voice**
 
 ```bash
-uv run vox speak --help
+uv run vox speak "Hello from Vox." -o hello.wav
 ```
 
-The CLI creates missing parent directories for the selected output path. Generated
-audio under `outputs/` is ignored by Git.
+**Speak with a cloned voice**
 
-## Architecture
-
-```text
-vox speak
-    -> TTSEngine implementation
-    -> AudioResult (mono float32 samples + sample rate)
-    -> WAV encoder
+```bash
+uv run vox speak "Hello from Vox." -e qwen -v gavin -o hello.wav
 ```
 
-Engines return raw audio samples rather than writing files. The CLI owns output-path
-handling and WAV encoding, which keeps the engine reusable from future interfaces.
+Without `-o`, audio is saved to `outputs/vox.wav` and replaces the previous file.
 
-The shared engine lifecycle consists of:
+**Manage voices**
 
-- `load()` — load model weights into memory.
-- `warmup()` — prepare a long-running engine before serving real requests.
-- `synthesize()` — turn text into an `AudioResult`.
-- `unload()` — release the model and cached MLX memory.
+```bash
+uv run vox voices add recording.m4a --id gavin --name "Gavin"
+uv run vox voices list
+uv run vox voices remove gavin
+```
+
+`voices add` drafts a transcript automatically and prints where it's saved. Open
+that file and correct it, or skip the draft by passing your own transcript with
+`--transcript-file transcript.txt`. `voices remove` asks first and can't be undone.
+
+**Transcribe a recording**
+
+```bash
+uv run vox transcribe recording.m4a
+```
+
+## Tips for natural speech
+
+- End sentences with punctuation, and keep them short.
+- Write numbers, times, and abbreviations the way they should be spoken:
+  "three thirty", not "3:30".
+- Leave out emoji, links, and hashtags.
+- A cloned voice copies the tone of its recording, so record it the way you want it
+  to sound.
+- Keep each cloned-voice generation under about a minute and a half of speech.
+  Split longer scripts into parts.
+
+The **Help** page in the web app has more tips, examples, and troubleshooting.
+
+## Good to know
+
+- **Your data** lives in `~/Library/Application Support/Vox`. Each voice is a folder
+  with its recording, transcript, and settings. To use a different folder, set
+  `VOX_DATA_DIR`, for example `VOX_DATA_DIR=~/vox-test uv run vox init`.
+- **The CLI and the web app stay in sync.** A voice added in one shows up in the
+  other, even while the web app is open.
+- **The web app only accepts requests from your own Mac.** It isn't reachable from
+  other devices or other websites.
+- **Cloned voices speak English only for now.** The model supports more languages,
+  but Vox doesn't expose them yet.
+- **Only clone voices you have permission to use.**
+
+## Models
+
+| Used for | Model | License |
+| --- | --- | --- |
+| Built-in voice | [Kokoro 82M](https://huggingface.co/mlx-community/Kokoro-82M-8bit) | Apache 2.0 |
+| Voice cloning | [Qwen3-TTS 0.6B Base](https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit) | Apache 2.0 |
+| Transcription | [Whisper small](https://huggingface.co/mlx-community/whisper-small-asr-6bit) | MIT |
+
+All three run through [MLX-Audio](https://github.com/Blaizzy/mlx-audio).
