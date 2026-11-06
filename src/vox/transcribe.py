@@ -7,10 +7,11 @@ import mlx.core as mx
 from mlx_audio.stt.utils import load_model
 
 _TRAILING_SPACED_PERIODS = re.compile(r"(?:\s+\.){2,}$")
+DEFAULT_WHISPER_MODEL_ID = "mlx-community/whisper-small-asr-6bit"
 
 
 class WhisperTranscriber:
-    def __init__(self, model_id: str = "mlx-community/whisper-small-asr-6bit") -> None:
+    def __init__(self, model_id: str = DEFAULT_WHISPER_MODEL_ID) -> None:
         self._model_id = model_id
         self._model: Any | None = None  # S tier type safety
 
