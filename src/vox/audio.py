@@ -1,6 +1,23 @@
+import io
 import shutil
 import subprocess
 from pathlib import Path
+
+import soundfile as sf
+
+from vox.engines.base import AudioResult
+
+
+def encode_wav(result: AudioResult) -> bytes:
+    buffer = io.BytesIO()
+    sf.write(
+        buffer,
+        result.samples,
+        samplerate=result.sample_rate,
+        format="WAV",
+        subtype="PCM_16",
+    )
+    return buffer.getvalue()
 
 
 def prepare_reference_audio(src: Path, dest: Path) -> None:
