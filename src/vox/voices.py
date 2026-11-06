@@ -4,12 +4,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from vox.engines.base import Voice
+from vox.files import write_text_atomically
 from vox.paths import voices_dir
 from vox.voice_metadata import (
     METADATA_FILENAME,
     VoiceMetadata,
     create_legacy_voice_metadata,
     create_voice_metadata,
+    mark_transcript_reviewed,
     read_voice_metadata,
     write_voice_metadata,
 )
@@ -193,6 +195,43 @@ def list_voices(root: Path | None = None) -> VoiceListing:
             invalid_list.append(InvalidVoice(voice_id=entry.name, reason=str(error)))
 
     return VoiceListing(voices=voice_list, invalid=invalid_list)
+
+
+def review_transcript(
+    voice_id: str, transcript: str, root: Path | None = None
+) -> VoiceMetadata:
+    """Save a human-checked transcript and record when it was reviewed."""
+    normalized_id = _normalize_voice_id(voice_id)
+    clean_transcript = transcript.strip()
+
+    if not clean_transcript:
+        raise ValueError("Voice transcript cannot be empty.")
+
+    voice_root = _get_root_directory(root=root)
+    voice_directory: Path = voice_root / normalized_id
+    metadata = load_voice_metadata(voice_id=normalized_id, root=voice_root)
+
+    write_text_atomically(voice_directory / "transcript.txt", clean_transcript + "\n")
+
+    reviewed_metadata = mark_transcript_reviewed(metadata)
+    write_voice_metadata(
+        metadata=reviewed_metadata, path=voice_directory / METADATA_FILENAME
+    )
+
+    return reviewed_metadata
+
+
+def remove_voice(voice_id: str, root: Path | None = None) -> None:
+    """Permanently delete a voice. This cannot be undone."""
+    normalized_id = _normalize_voice_id(voice_id)
+    voice_root = _get_root_directory(root=root)
+    voice_directory: Path = voice_root / normalized_id
+
+    # A symlink could point outside the library; never delete through one.
+    if voice_directory.is_symlink() or not voice_directory.is_dir():
+        raise FileNotFoundError(f"Voice not found: {normalized_id}")
+
+    shutil.rmtree(voice_directory)
 
 
 def voice_exists(voice_id: str, root: Path | None = None) -> bool:

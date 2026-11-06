@@ -1,10 +1,11 @@
 import json
-import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 import soundfile as sf
+
+from vox.files import write_text_atomically
 
 CURRENT_SCHEMA_VERSION = 1
 METADATA_FILENAME = "metadata.json"
@@ -57,12 +58,7 @@ def _read_audio_metadata(reference_path: Path) -> AudioMetadata:
 def write_voice_metadata(metadata: VoiceMetadata, path: Path) -> None:
     data = asdict(metadata)
     json_text = json.dumps(data, indent=2)
-
-    # Write beside the target, then swap it in, so a crash never leaves
-    # half-written JSON behind.
-    temporary_path = path.with_name(f".{path.name}.tmp")
-    temporary_path.write_text(json_text + "\n", encoding="utf-8")
-    os.replace(temporary_path, path)
+    write_text_atomically(path, json_text + "\n")
 
 
 def read_voice_metadata(path: Path) -> VoiceMetadata:
@@ -129,6 +125,16 @@ def create_voice_metadata(
     )
 
     return metadata
+
+
+def mark_transcript_reviewed(metadata: VoiceMetadata) -> VoiceMetadata:
+    timestamp = _utc_timestamp()
+
+    return replace(
+        metadata,
+        updated_at=timestamp,
+        transcript=replace(metadata.transcript, reviewed_at=timestamp),
+    )
 
 
 def create_legacy_voice_metadata(
